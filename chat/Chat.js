@@ -1,103 +1,119 @@
-import * as React from 'react'
-import {Header, Text} from 'react-native-elements'
-import {ScrollView, StyleSheet, TextInput, useWindowDimensions, View} from 'react-native';
-import {useState} from 'react';
-import {Colors} from "react-native/Libraries/NewAppScreen";
+import * as React from 'react';
+import {Header, Text, Button, Input} from 'react-native-elements';
+import {
+  Alert,
+  Dimensions,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import {useEffect, useState} from 'react';
+import {Colors} from 'react-native/Libraries/NewAppScreen';
 import io from 'socket.io-client';
+import axios from 'axios';
+import Icon from 'react-native-vector-icons/MaterialIcons'
 
-export function Chat(props) {
-    const window = useWindowDimensions();
-    const [messages, setMessages] = useState([]);
-    const [message, setMessage] = useState({});
-    const [chat, setChat] = useState({});
+Icon.loadFont()
 
-    function submitChatMessage() {
-        socket.emit('', chat);
-        setChat('');
+const width = Dimensions.get('window').width
+
+export default function Chat(props) {
+  const [messages, setMessages] = useState([]);
+  const [message, setMessage] = useState('');
+  const [chat, setChat] = useState(null);
+  const {user} = props.route.params;
+  //Aqui eu estou subistituindo o usuário logado por um já cadastro no vando e só seto o usuário de acordo coma plataforma
+  const userLoggedId = Platform.OS === 'android' ? '5f23511e5ee6301a33b74e64' : '5f23511e5ee6301a33b74e65';
+  const [inputRef, setInputRef] = useState(null);
+  const socket = io('http://192.168.0.19:3000');
+
+  /**
+   * Aqui é o único ponto em que o usuário se conecta ao cliente co socketio,
+   * É preciso haver outro ponto para ele se conectar ao acessar a página pois ele vai ficar
+   * atrasado na conversa.
+   */
+  function sendMessage() {
+    let newMessage = {
+      text: message,
+      chat: chat._id,
+      sender: userLoggedId,
+      receiver: user._id
     }
 
-    // socket = io('http://192.168.0.19:3000')
+    axios.post('http://192.168.0.19:3000/conversation', {message: newMessage}).then(response => {
+      if (response.status === 200) {
+        socket.on(`${chat._id}`, msg => {
+          setMessages([...messages, msg])
+        })
+      }
+    }).catch(err => {
+      Alert.alert('Atenção', 'Ocorreu um erro ao carregar mensagens.');
+    });
 
-    // socket.on('chat message', msg => {
-    //     let mgss = chatMessages
-    //     mgss.push(msg)
-    //     setChatMessages(mgss)
+    inputRef.clear();
+    setMessage('');
+  }
 
-    // })
+  function initalizeChat() {
+    axios.post('http://192.168.0.19:3000/chat', {users: [user._id, userLoggedId]}).then(response => {
+      setChat(response.data.chat);
+      setMessages(response.data.messages);
+    }).catch(err => {
+      Alert.alert('Atenção', 'Ocorreu um erro ao iniciar o chat.');
+    });
+  }
 
-    return (
-        <>
-            <Header
-                leftComponent={{ icon: 'home', color: '#fff' }}
-                centerComponent={{ text: 'Chat', style: { color: '#fff' } }}
-            />
-            <View>
-            <Text h1>Chat</Text>
+  useEffect(() => {
+    initalizeChat();
+  }, []);
 
-            <ScrollView
-                style={styles.scrollView}>
+  return (
+    <>
+      <Header
+        centerComponent={{text: `Chat ${user.name}`, style: {color: '#fff'}}}
+      />
+      <View style={[styles.container]}>
+        <ScrollView>
+          {
+            messages.map(m => (
+              <View key={m._id} style={{width: width, alignItems: userLoggedId === m.sender ? 'flex-end' : 'flex-start'}}>
+                <Text style={{borderWidth: 2, width: width * .5, flexWrap: 'wrap'}}>{m.text}</Text>
+              </View>
+            ))
+          }
+        </ScrollView>
 
-                {
-                    messages.map(m => (
-                        <Text key={Date.now()} style={{borderWidth: 2}}>{m}</Text>
-                    ))
-                }
-
-            </ScrollView>
-            <TextInput
-                style={{height: 40, borderWidth: 2}}
-                autoCorrect={false}
-                value={message}
-                onSubmitEditing={() => submitChatMessage()}
-                onChangeText={msg => {
-                    setChat(msg)
-                }}
-            />
-            </View>
-        </>
-    )
+        <View style={{width: width, flexDirection: 'row'}}>
+          <Input
+            ref={input => setInputRef(input)}
+            containerStyle={{width: width * .85,}}
+            autoCorrect={false}
+            value={message}
+            onChangeText={msg => {
+              setMessage(msg);
+            }}
+            placeholder='Mensagem'
+          />
+          <Button
+            title={'Enviar'}
+            onPress={() => sendMessage()}
+          />
+        </View>
+      </View>
+    </>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        // alignItems: 'flex-end',
-        justifyContent: 'flex-end',
-        height: window.height,
-        width: window.width,
-        backgroundColor: '#F5FCFF',
-    },
-    scrollView: {
-        height: window.height,
-        backgroundColor: '#F5FCFF',
-    },
-    body: {
-        backgroundColor: '#F5FCFF',
-    },
-    sectionContainer: {
-        marginTop: 32,
-        paddingHorizontal: 24,
-    },
-    sectionTitle: {
-        fontSize: 24,
-        fontWeight: '600',
-        color: '#212121',
-    },
-    sectionDescription: {
-        marginTop: 8,
-        fontSize: 18,
-        fontWeight: '400',
-        color: Colors.dark,
-    },
-    highlight: {
-        fontWeight: '700',
-    },
-    footer: {
-        color: Colors.dark,
-        fontSize: 12,
-        fontWeight: '600',
-        padding: 4,
-        paddingRight: 12,
-        textAlign: 'right',
-    },
+  container: {
+    flex: 1,
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    width: width,
+    backgroundColor: '#F5FCFF',
+  },
 });

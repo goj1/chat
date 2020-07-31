@@ -6,7 +6,7 @@ const port = 3000
 
 
 const app = express()
-app.use(bodyParser.json)
+app.use(bodyParser.json())
 
 const server = require("http").createServer(app)
 const io = socketIo(server)
@@ -26,71 +26,72 @@ mongoose.connection.on('disconnected', () => {
   console.log("Desconectado do banco de dados Maria Chat.")
 })
 
-app.post('/', async (req, res) => {
-  console.log('veioasdfasdf')
-  let user1 = new User({name: 'Hugo Sousa'})
-  let user2 = new User({name: 'Mafe'})
-  await user1.save()
-  await user2.save()
-  res.sendStatus(200)
+app.get('/', async (req, res) => {
+  //Usuários drafts
+  // let user1 = new User({name: 'Android User'})
+  // let user2 = new User({name: 'iPhone User'})
+  // await user1.save()
+  // await user2.save()
+  // res.sendStatus(200)
+  res.send('Servidor rodando zerado!')
 })
 
+/**
+ * Lista os usuários cadastrados
+ */
 app.get('/users', async (req, res) => {
-  console.log('testetw')
   let users = await User.find({})
   res.status(200).json(users)
 })
 
-//Lista todos os chat do usuário quando ele acessar essa rota. Aqui deve mostrar todos os chat em que o usuário é autor ou receptor das mensagens
+/**
+ * Lista todos os chat do usuário quando ele acessar essa rota. Aqui deve mostrar todos os chat em que o usuário é autor ou receptor das mensagens.
+ * Essa funcionalidade não está sendo usada pois um chat é um usuário então quando clica em um usuário da lista de contato um chat é criado automaticamente,
+ * Então essa funcionalidade meio que ficou inútil, mas pode ser usada...
+ */
 app.post('/chats', async (req, res) => {
   let idUser = req.body.id
   let chats = await Chat.find({}).all('users', [idUser])
   res.status(200).json(chats)
 })
 
-//Acessa o chat existente ou cria um com os id dos usuários envolvidos
+/**
+ * Quando um usuário da lista de contatos é clicado vai pra tela de chat com esse usuário, se não tiver um chat ele é criado automaticamente.
+ * Se houver conversas ela é carregada.
+ * Essa rota pode ser substituída pelo evento on do io. Ainda não testei, mas pode ser mais vantajoso.
+ */
 app.post('/chat', async (req, res) => {
   let users = req.body.users
 
   if (users && users.length > 0) {
-    let chat = await Chat.find({}).all('users', users)
+    let chat = await Chat.findOne({}).all('users', users)
 
     //Se o chat existir cria um servidor web socket com o id do chat, pois cada chat terá seu próprop canal.
     if (chat) {
-      io.on("connection", socket => {
-        socket.on(`${chat._id}`, msg => {
-          io.emit(`${chat._id}`, msg)
-        })
-      })
-
-      res.status(200).json(chat)
+      let messages = await Message.find({chat: chat._id})
+      res.status(200).json({chat, messages})
     } else {
-      let chatSaved = new Chat(users)
+      let chatSaved = new Chat({users})
       await chatSaved.save()
-      io.on("connection", socket => {
-        socket.on(`${chatSaved._id}`, msg => {
-          io.emit(`${chatSaved._id}`, msg)
-        })
-      })
-
-      res.status(200).json(chatSaved)
+      res.status(200).json({chat: chatSaved, messages: []})
     }
   } else {
-      res.status(500).json({mensagem: 'Alguma mensagem aqui'})
+      res.status(500).json({mensagem: 'Ops! Erro ao acessar o chat.'})
   }
 })
 
-app.post('conversation', async (req, res) => {
+/**
+ * Quando uma mensagem é enviada, ela é salva e um evento é enviado para o cliente do socketio que está no app.
+ * Porém tem um pequeno erro aqui, quando o receptor entra na conversa, ele só será notificado quando envia uma mensagem.
+ * Pois do lado do app é só nesse momento que ele se registra no cliente do socketio. Eu ainda não sei o ponto para criar um cliente do socket quando
+ * o usuário entra na tela.
+ * Pelo que andei pesquisando, todas essas rotas podem ser substituídas por um único cliente e um único server do socketio. Mas não testei.
+ */
+app.post('/conversation', async (req, res) => {
   let message = req.body.message
   let newMessage = new Message(message)
-  await message.save()
-
-  io.on("connection", socket => {
-    socket.on(`${message.chat}`, msg => {
-      io.emit(`${message.chat}`, msg)
-    })
-  })
-
+  await newMessage.save()
+  io.emit(`${message.chat}`, newMessage)
   res.sendStatus(200)
 })
 
